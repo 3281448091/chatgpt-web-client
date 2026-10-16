@@ -6,7 +6,7 @@ Findings are ordered by severity. "Confirmed" means I traced the failure through
 
 ---
 
-## 1. Switching browser tabs mid-reply sends the message again — High, Confirmed
+## 1. Switching browser tabs mid-reply sends the message again — High, Confirmed — **Fixed**
 
 `components/Chat.vue:94`
 
@@ -16,7 +16,7 @@ Findings are ordered by severity. "Confirmed" means I traced the failure through
 
 **Fix:** pass `openWhenHidden: true` in the `fetchEventSource` options.
 
-## 2. Clicking "Stop" throws a TypeError in `finally` — Medium, Confirmed
+## 2. Clicking "Stop" throws a TypeError in `finally` — Medium, Confirmed — **Fixed**
 
 `components/Chat.vue:39-45`, `components/Chat.vue:160-166`
 
@@ -24,7 +24,7 @@ Findings are ordered by severity. "Confirmed" means I traced the failure through
 
 **Fix:** keep a local reference, e.g. `const controller = new AbortController(); processingController.value = controller;`, and use `controller` in `onmessage` and `finally`. Alternatively, guard with `processingController.value?.signal.aborted`.
 
-## 3. Failed requests are never shown to the user; the bubble shows a blinking cursor forever — Medium, Confirmed
+## 3. Failed requests are never shown to the user; the bubble shows a blinking cursor forever — Medium, Confirmed — **Fixed**
 
 `components/Chat.vue:97-110`, `components/Chat.vue:158-159`, `components/Chat.vue:257`
 
@@ -32,7 +32,7 @@ A non-200 response (`onopen`), a connection the server closes before `[DONE]` (`
 
 **Fix:** in `catch`, set `botMessage.error = true`, `botMessage.text ||= err.message`, and mark the message as finished. A `done`/`streaming` flag is clearer than checking `raw`, and it also makes "Stop" render properly.
 
-## 4. Pressing Enter to confirm IME input (Chinese/Japanese/Korean) sends the message — Medium, Confirmed
+## 4. Pressing Enter to confirm IME input (Chinese/Japanese/Korean) sends the message — Medium, Confirmed — **Fixed**
 
 `components/Chat.vue:292`
 
@@ -46,7 +46,7 @@ A non-200 response (`onopen`), a connection the server closes before `[DONE]` (`
 
 (Safari also needs a `keyCode === 229` check.)
 
-## 5. `crypto.randomUUID()` breaks sending when the app is served over plain HTTP — Medium, Confirmed
+## 5. `crypto.randomUUID()` breaks sending when the app is served over plain HTTP — Medium, Confirmed — **Fixed**
 
 `components/Chat.vue:62`, `components/Chat.vue:71`
 
@@ -94,6 +94,10 @@ The `try` branch always calls `hljs.highlightAuto(code)`, and that almost never 
 - Markdown output is always passed through `DOMPurify.sanitize` before `v-html`, including user messages. The citation regex rewrites happen *before* sanitization, so they can't introduce unsafe HTML.
 - Sending is correctly blocked while a request is already in flight (`components/Chat.vue:48`).
 - `onerror` rethrows, which correctly turns off the library's automatic retry loop. That is the right call for a non-idempotent POST.
+
+## Status
+
+Items 1–5 are fixed in `components/Chat.vue` on this branch. Each one was checked in Chromium against a mock SSE server: the same script reproduces the bug on the original code and passes on the fixed code. Items 6–8 and the nits are still open.
 
 ## Suggested priority
 

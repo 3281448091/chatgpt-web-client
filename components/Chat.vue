@@ -32,6 +32,9 @@ const messagesContainerElement = ref(null);
 const inputContainerElement = ref(null);
 const inputTextElement = ref(null);
 
+// Used only for Vue list keys. crypto.randomUUID() is unavailable outside secure contexts (e.g. plain HTTP on a LAN IP).
+let nextMessageId = 0;
+
 const scrollToBottom = () => {
     messagesContainerElement.value.scrollTop = messagesContainerElement.value.scrollHeight;
 };
@@ -55,20 +58,20 @@ const sendMessage = async (input) => {
     }
 
     suggestedResponses.value = [];
-    processingController.value = new AbortController();
+    // Keep a local reference: stopProcessing() sets processingController to null while the request is still settling.
+    const controller = new AbortController();
+    processingController.value = controller;
 
     message.value = '';
 
-    const messageId = crypto.randomUUID();
-
     messages.value.push({
-        id: messageId,
+        id: nextMessageId++,
         text: input,
         role: 'user',
     });
 
     messages.value.push({
-        id: crypto.randomUUID(),
+        id: nextMessageId++,
         text: '',
         role: 'bot',
     });
@@ -93,7 +96,9 @@ const sendMessage = async (input) => {
     try {
         await fetchEventSource(`${config.apiBaseUrl}/conversation`, {
             ...opts,
-            signal: processingController.value.signal,
+            signal: controller.signal,
+            // Without this, the library aborts the request when the tab is hidden and re-POSTs the message when it's visible again.
+            openWhenHidden: true,
             onopen(response) {
                 console.log('opened', response);
                 if (response.status === 200) {
@@ -110,7 +115,7 @@ const sendMessage = async (input) => {
             },
             onmessage(message) {
                 if (message.data === '[DONE]') {
-                    processingController.value.abort();
+                    controller.abort();
                     return;
                 }
                 if (message.event === 'result') {
@@ -157,14 +162,33 @@ const sendMessage = async (input) => {
         });
     } catch (err) {
         console.log('ERROR', err);
-    } finally {
-        if (!processingController.value.signal.aborted) {
-            processingController.value.abort();
+        if (!botMessage.error) {
+            botMessage.text = botMessage.text
+                ? `${botMessage.text}\n\n${err.message}`
+                : (err.message || 'An error occurred. Please try again.');
+            botMessage.error = true;
         }
-        processingController.value = null;
+    } finally {
+        botMessage.done = true;
+        if (!controller.signal.aborted) {
+            controller.abort();
+        }
+        if (processingController.value === controller) {
+            processingController.value = null;
+        }
         await nextTick();
-        inputTextElement.value.focus();
+        inputTextElement.value?.focus();
     }
+};
+
+const onInputEnter = (event) => {
+    // Enter while an IME composition is active (e.g. Pinyin) commits the candidate; it shouldn't send the message.
+    // keyCode 229 covers Safari, which fires keydown after compositionend.
+    if (event.isComposing || event.keyCode === 229) {
+        return;
+    }
+    event.preventDefault();
+    sendMessage(message.value);
 };
 
 const setChatContainerHeight = () => {
@@ -254,7 +278,7 @@ if (!process.server) {
                         <!-- message text -->
                         <div
                             class="prose prose-sm prose-invert prose-blockquote:border-l-white/50 break-words max-w-6xl"
-                            v-html="(message.role === 'user' || message.raw) ? parseMarkdown(message.text) : parseMarkdown(message.text, true)"
+                            v-html="parseMarkdown(message.text, message.role === 'bot' && !message.done)"
                         />
                     </div>
                 </div>
@@ -289,7 +313,7 @@ if (!process.server) {
                     ref="inputTextElement"
                     rows="1"
                     v-model="message"
-                    @keydown.enter.exact.prevent="sendMessage(message)"
+                    @keydown.enter.exact="onInputEnter"
                     placeholder="Type your message here..."
                     :disabled="!!processingController"
                     class="p-3 rounded-sm text-slate-100 w-full bg-white/5 backdrop-blur-sm placeholder-white/40 shadow-inner shadow focus:outline-none"
